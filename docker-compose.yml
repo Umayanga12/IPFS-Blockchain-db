@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  ipfs:
+    image: ipfs/go-ipfs:latest
+    container_name: ipfs-node
+    ports:
+      - "4001:4001"   
+      - "5001:5001"   
+      - "8080:8080"   
+    volumes:
+      - ipfs_staging:/export    
+      - ipfs_data:/data/ipfs   
+
+volumes:
+  ipfs_staging:
+  ipfs_data:
