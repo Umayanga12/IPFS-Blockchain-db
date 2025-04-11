@@ -1,0 +1,28 @@
+# Binaries and other executable artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build output (if you build locally in the project folder)
+*.test
+*.out
+*.log
+
+# Logs
+*.log
+
+# Ignore environment/config files
+.env
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
