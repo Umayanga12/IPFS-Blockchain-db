@@ -11,6 +11,8 @@ github.com/crackcomm/go-gitignore
 ## explicit; go 1.17
 github.com/decred/dcrd/dcrec/secp256k1/v4
 github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa
+# github.com/google/go-cmp v0.6.0
+## explicit; go 1.13
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
@@ -96,6 +98,22 @@ github.com/multiformats/go-varint
 # github.com/spaolacci/murmur3 v1.1.0
 ## explicit
 github.com/spaolacci/murmur3
+# github.com/stretchr/testify v1.10.0
+## explicit; go 1.17
+# go.uber.org/multierr v1.10.0
+## explicit; go 1.19
+go.uber.org/multierr
+# go.uber.org/zap v1.27.0
+## explicit; go 1.19
+go.uber.org/zap
+go.uber.org/zap/buffer
+go.uber.org/zap/internal
+go.uber.org/zap/internal/bufferpool
+go.uber.org/zap/internal/color
+go.uber.org/zap/internal/exit
+go.uber.org/zap/internal/pool
+go.uber.org/zap/internal/stacktrace
+go.uber.org/zap/zapcore
 # golang.org/x/crypto v0.36.0
 ## explicit; go 1.23.0
 golang.org/x/crypto/bcrypt
@@ -108,13 +126,14 @@ golang.org/x/crypto/sha3
 golang.org/x/sys/cpu
 golang.org/x/sys/unix
 golang.org/x/sys/windows
-# google.golang.org/protobuf v1.30.0
-## explicit; go 1.11
+# google.golang.org/protobuf v1.36.1
+## explicit; go 1.21
 google.golang.org/protobuf/encoding/prototext
 google.golang.org/protobuf/encoding/protowire
 google.golang.org/protobuf/internal/descfmt
 google.golang.org/protobuf/internal/descopts
 google.golang.org/protobuf/internal/detrand
+google.golang.org/protobuf/internal/editiondefaults
 google.golang.org/protobuf/internal/encoding/defval
 google.golang.org/protobuf/internal/encoding/messageset
 google.golang.org/protobuf/internal/encoding/tag
@@ -127,6 +146,7 @@ google.golang.org/protobuf/internal/genid
 google.golang.org/protobuf/internal/impl
 google.golang.org/protobuf/internal/order
 google.golang.org/protobuf/internal/pragma
+google.golang.org/protobuf/internal/protolazy
 google.golang.org/protobuf/internal/set
 google.golang.org/protobuf/internal/strs
 google.golang.org/protobuf/internal/version
