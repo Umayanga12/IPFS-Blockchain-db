@@ -2,121 +2,203 @@ package logger
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/joho/godotenv"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
-// LogLevel defines different levels of logging.
-type LogLevel int
-
-const (
-	DEBUG LogLevel = iota
-	INFO
-	WARNING
-	ERROR
-)
-
-var levelNames = []string{"DEBUG", "INFO", "WARNING", "ERROR"}
-
-// Logger encapsulates our logging object.
-type Logger struct {
-	mu       sync.Mutex
-	logFile  *os.File
-	logLevel LogLevel
-	console  bool
+// Logger defines the interface for structured logging with various levels
+// and contextual logging capabilities.
+type Logger interface {
+	Debug(msg string, keysAndValues ...interface{})
+	Info(msg string, keysAndValues ...interface{})
+	Warn(msg string, keysAndValues ...interface{})
+	Error(msg string, keysAndValues ...interface{})
+	Fatal(msg string, keysAndValues ...interface{})
+	WithFields(keysAndValues ...interface{}) Logger
+	Sync() error
 }
 
-var instance *Logger
-var once sync.Once
-
-// Init initializes the logger singleton. logToConsole allows output to both console and log file.
-func Init(logToConsole bool) *Logger {
-	once.Do(func() {
-		_ = godotenv.Load() // load any env variables
-		logFilePath := "app.log"
-		logLevel := getLogLevelFromEnv()
-
-		file, err := os.OpenFile(logFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			log.Fatalf("Failed to open log file: %s", err)
-		}
-
-		instance = &Logger{
-			logFile:  file,
-			logLevel: logLevel,
-			console:  logToConsole,
-		}
-	})
-	return instance
+// ZapLogger implements Logger interface using Uber's Zap library.
+type ZapLogger struct {
+	delegate *zap.SugaredLogger
 }
 
-func getLogLevelFromEnv() LogLevel {
-	level := strings.ToUpper(os.Getenv("LOG_LEVEL"))
-	switch level {
-	case "DEBUG":
-		return DEBUG
-	case "INFO":
-		return INFO
-	case "WARNING":
-		return WARNING
-	case "ERROR":
-		return ERROR
+// Config holds logging configuration parameters.
+type Config struct {
+	Level      string        // Log level (debug, info, warn, error, fatal)
+	Format     string        // Log format (json, console)
+	BaseDir    string        // Base directory to store log files
+	RotateTime time.Duration // Log rotation interval
+}
+
+// NewLogger creates a new Logger instance with specified configuration.
+func NewLogger(config Config) (Logger, error) {
+	if config.BaseDir == "" {
+		return nil, fmt.Errorf("base directory must be specified")
+	}
+
+	// Ensure the base directory exists
+	if err := os.MkdirAll(config.BaseDir, os.ModePerm); err != nil {
+		return nil, fmt.Errorf("failed to create base directory: %w", err)
+	}
+
+	// Create a new log file based on the current date and time
+	logFilePath := getLogFilePath(config.BaseDir)
+	writer, err := getLogWriter(logFilePath, config.RotateTime)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create log writer: %w", err)
+	}
+
+	logLevel := getZapLevel(config.Level)
+	encoderConfig := getEncoderConfig(config.Format)
+
+	core := zapcore.NewCore(
+		zapcore.NewConsoleEncoder(encoderConfig),
+		writer,
+		logLevel,
+	)
+
+	logger := zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1))
+	return &ZapLogger{delegate: logger.Sugar()}, nil
+}
+
+// NewConfigFromEnv creates Config from environment variables:
+// LOG_LEVEL (default: info), LOG_FORMAT (default: console), BASE_DIR (default: logs)
+func NewConfigFromEnv() Config {
+	level := os.Getenv("LOG_LEVEL")
+	if level == "" {
+		level = "info"
+	}
+
+	format := os.Getenv("LOG_FORMAT")
+	if format == "" {
+		format = "console"
+	}
+
+	baseDir := os.Getenv("BASE_DIR")
+	if baseDir == "" {
+		baseDir = "logs"
+	}
+
+	return Config{
+		Level:      level,
+		Format:     format,
+		BaseDir:    baseDir,
+		RotateTime: 10 * time.Minute,
+	}
+}
+
+func getZapLevel(level string) zapcore.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return zapcore.DebugLevel
+	case "info":
+		return zapcore.InfoLevel
+	case "warn", "warning":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	case "fatal":
+		return zapcore.FatalLevel
 	default:
-		return INFO
+		return zapcore.InfoLevel
 	}
 }
 
-func (l *Logger) log(level LogLevel, format string, args ...any) {
-	if level < l.logLevel {
-		return
+func getEncoderConfig(format string) zapcore.EncoderConfig {
+	if format == "console" {
+		cfg := zap.NewDevelopmentEncoderConfig()
+		cfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		return cfg
 	}
+	return zap.NewProductionEncoderConfig()
+}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	levelStr := levelNames[level]
-	caller := getCallerInfo()
-	message := fmt.Sprintf(format, args...)
-	logMsg := fmt.Sprintf("[%s] [%s] [%s] %s\n", timestamp, levelStr, caller, message)
-
-	if l.console {
-		fmt.Print(logMsg)
+func getLogFilePath(baseDir string) string {
+	date := time.Now().Format("2006-01-02")
+	timePart := time.Now().Format("15-04")
+	dateDir := filepath.Join(baseDir, date)
+	if err := os.MkdirAll(dateDir, os.ModePerm); err != nil {
+		fmt.Printf("failed to create date directory: %v\n", err)
 	}
-	_, _ = l.logFile.WriteString(logMsg)
+	return filepath.Join(dateDir, fmt.Sprintf("log-%s.log", timePart))
 }
 
-func getCallerInfo() string {
-	// Skip 3 frames to reach the function that called the log method.
-	pc, file, line, ok := runtime.Caller(3)
-	if !ok {
-		return "unknown"
+func getLogWriter(logFilePath string, rotateTime time.Duration) (zapcore.WriteSyncer, error) {
+	writer := zapcore.AddSync(&rotatingFileWriter{
+		baseDir:    filepath.Dir(filepath.Dir(logFilePath)),
+		rotateTime: rotateTime,
+	})
+	return writer, nil
+}
+
+// rotatingFileWriter handles log rotation based on time intervals.
+type rotatingFileWriter struct {
+	baseDir    string
+	rotateTime time.Duration
+	lastRotate time.Time
+	file       *os.File
+}
+
+func (w *rotatingFileWriter) Write(p []byte) (n int, err error) {
+	now := time.Now()
+	if w.file == nil || now.Sub(w.lastRotate) >= w.rotateTime {
+		if w.file != nil {
+			w.file.Close()
+		}
+		logFilePath := getLogFilePath(w.baseDir)
+		w.file, err = os.OpenFile(logFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return 0, err
+		}
+		w.lastRotate = now
 	}
-	funcName := runtime.FuncForPC(pc).Name()
-	shortFile := filepath.Base(file)
-	return fmt.Sprintf("%s:%d %s", shortFile, line, filepath.Base(funcName))
+	return w.file.Write(p)
 }
 
-// Public API for logging.
-func (l *Logger) Info(format string, args ...any) {
-	l.log(INFO, format, args...)
+func (w *rotatingFileWriter) Sync() error {
+	if w.file != nil {
+		return w.file.Sync()
+	}
+	return nil
 }
 
-func (l *Logger) Debug(format string, args ...any) {
-	l.log(DEBUG, format, args...)
+// Debug logs a debug message with structured context.
+func (l *ZapLogger) Debug(msg string, keysAndValues ...interface{}) {
+	l.delegate.Debugw(msg, keysAndValues...)
 }
 
-func (l *Logger) Warning(format string, args ...any) {
-	l.log(WARNING, format, args...)
+// Info logs an info message with structured context.
+func (l *ZapLogger) Info(msg string, keysAndValues ...interface{}) {
+	l.delegate.Infow(msg, keysAndValues...)
 }
 
-func (l *Logger) Error(format string, args ...any) {
-	l.log(ERROR, format, args...)
+// Warn logs a warning message with structured context.
+func (l *ZapLogger) Warn(msg string, keysAndValues ...interface{}) {
+	l.delegate.Warnw(msg, keysAndValues...)
+}
+
+// Error logs an error message with structured context.
+func (l *ZapLogger) Error(msg string, keysAndValues ...interface{}) {
+	l.delegate.Errorw(msg, keysAndValues...)
+}
+
+// Fatal logs a fatal message with structured context and exits the program.
+func (l *ZapLogger) Fatal(msg string, keysAndValues ...interface{}) {
+	l.delegate.Fatalw(msg, keysAndValues...)
+}
+
+// WithFields creates a new logger with additional structured context.
+func (l *ZapLogger) WithFields(keysAndValues ...interface{}) Logger {
+	return &ZapLogger{delegate: l.delegate.With(keysAndValues...)}
+}
+
+// Sync flushes any buffered log entries.
+func (l *ZapLogger) Sync() error {
+	return l.delegate.Sync()
 }
